@@ -1,0 +1,23 @@
+# IAR / EWARM build outputs
+EWARM/STM Projects/
+EWARM/Debug/
+EWARM/Release/
+EWARM/*.dep
+EWARM/*.ewt
+*.map
+*.out
+*.hex
+*.bin
+*.elf
+
+# STM32CubeMX temporary/backup files
+*.bak
+*.tmp
+
+# Editor and OS files
+.vscode/
+.idea/
+.vs/
+.DS_Store
+Thumbs.db
+desktop.ini
