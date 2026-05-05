@@ -26,6 +26,42 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef struct
+{
+  const char *name;
+  volatile uint16_t *adc_value_source;
+  GPIO_TypeDef *output_port;
+  uint16_t output_pin;
+  uint32_t press_threshold;
+  uint32_t release_threshold;
+  uint32_t adc_value;
+  GPIO_PinState output_state;
+} ButtonChannel;
+
+typedef struct
+{
+  GPIO_TypeDef *a_port;
+  uint16_t a_pin;
+  GPIO_TypeDef *b_port;
+  uint16_t b_pin;
+  GPIO_TypeDef *sw_port;
+  uint16_t sw_pin;
+  uint8_t stable_ab;
+  uint8_t last_raw_ab;
+  uint32_t last_ab_change_ms;
+  GPIO_PinState stable_sw;
+  GPIO_PinState last_raw_sw;
+  uint32_t last_sw_change_ms;
+  uint8_t switch_pressed;
+} RotaryEncoder;
+
+typedef struct
+{
+  uint8_t rot_l;
+  uint8_t rot_r;
+  uint8_t rot_click;
+  uint8_t oled_menu_button;
+} InputEvents;
 
 /* USER CODE END PTD */
 
@@ -43,18 +79,115 @@
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 
-/* USER CODE BEGIN PV */
-static const uint32_t HALL_PRESS_THRESHOLD = 2200;
-static const uint32_t HALL_RELEASE_THRESHOLD = 1800;
+DMA_HandleTypeDef hdma_adc1;
+DMA_HandleTypeDef hdma_adc2;
 
-static uint32_t hall_adc_value = 0;
-static GPIO_PinState hall_output_state = GPIO_PIN_RESET;
+/* USER CODE BEGIN PV */
+#define BUTTON_COUNT 14U
+#define ADC1_BUTTON_COUNT 8U
+#define ADC2_BUTTON_COUNT 6U
+#define DEFAULT_PRESS_THRESHOLD 2200U
+#define DEFAULT_RELEASE_THRESHOLD 1800U
+#define ENCODER_DEBOUNCE_MS 2U
+#define ENCODER_SWITCH_DEBOUNCE_MS 10U
+#define OLED_MENU_BUTTON_DEBOUNCE_MS 10U
+
+#define OLED_MENU_BUTTON_PORT GPIOA
+#define OLED_MENU_BUTTON_PIN  GPIO_PIN_12
+
+#define LEFT_HE_ADC        adc1_values[0]
+#define DOWN_HE_ADC        adc1_values[1]
+#define RIGHT_HE_ADC       adc1_values[2]
+#define UP_HE_ADC          adc1_values[3]
+#define CROSS_HE_ADC       adc1_values[4]
+#define CIRCLE_HE_ADC      adc1_values[5]
+#define L2_HE_ADC          adc1_values[6]
+#define R2_HE_ADC          adc1_values[7]
+
+#define SQUARE_HE_ADC      adc2_values[0]
+#define TRIANGLE_HE_ADC    adc2_values[1]
+#define L1_HE_ADC          adc2_values[2]
+#define R1_HE_ADC          adc2_values[3]
+#define L3_HE_ADC          adc2_values[4]
+#define R3_HE_ADC          adc2_values[5]
+
+#define LEFT_MOSFET_PORT       GPIOA
+#define LEFT_MOSFET_PIN        GPIO_PIN_10
+#define DOWN_MOSFET_PORT       GPIOA
+#define DOWN_MOSFET_PIN        GPIO_PIN_9
+#define RIGHT_MOSFET_PORT      GPIOA
+#define RIGHT_MOSFET_PIN       GPIO_PIN_8
+#define UP_MOSFET_PORT         GPIOC
+#define UP_MOSFET_PIN          GPIO_PIN_6
+#define SQUARE_MOSFET_PORT     GPIOC
+#define SQUARE_MOSFET_PIN      GPIO_PIN_7
+#define TRIANGLE_MOSFET_PORT   GPIOB
+#define TRIANGLE_MOSFET_PIN    GPIO_PIN_3
+#define L1_MOSFET_PORT         GPIOB
+#define L1_MOSFET_PIN          GPIO_PIN_4
+#define R1_MOSFET_PORT         GPIOB
+#define R1_MOSFET_PIN          GPIO_PIN_5
+#define CROSS_MOSFET_PORT      GPIOB
+#define CROSS_MOSFET_PIN       GPIO_PIN_6
+#define CIRCLE_MOSFET_PORT     GPIOB
+#define CIRCLE_MOSFET_PIN      GPIO_PIN_7
+#define L2_MOSFET_PORT         GPIOC
+#define L2_MOSFET_PIN          GPIO_PIN_9
+#define R2_MOSFET_PORT         GPIOC
+#define R2_MOSFET_PIN          GPIO_PIN_8
+#define L3_MOSFET_PORT         GPIOA
+#define L3_MOSFET_PIN          GPIO_PIN_11
+#define R3_MOSFET_PORT         GPIOB
+#define R3_MOSFET_PIN          GPIO_PIN_9
+
+static volatile uint16_t adc1_values[ADC1_BUTTON_COUNT];
+static volatile uint16_t adc2_values[ADC2_BUTTON_COUNT];
+
+static ButtonChannel buttons[BUTTON_COUNT] =
+{
+  /* name       Hall input             MOSFET output */
+  { "LEFT",     &LEFT_HE_ADC,     LEFT_MOSFET_PORT,     LEFT_MOSFET_PIN,     DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "DOWN",     &DOWN_HE_ADC,     DOWN_MOSFET_PORT,     DOWN_MOSFET_PIN,     DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "RIGHT",    &RIGHT_HE_ADC,    RIGHT_MOSFET_PORT,    RIGHT_MOSFET_PIN,    DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "UP",       &UP_HE_ADC,       UP_MOSFET_PORT,       UP_MOSFET_PIN,       DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "SQUARE",   &SQUARE_HE_ADC,   SQUARE_MOSFET_PORT,   SQUARE_MOSFET_PIN,   DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "TRIANGLE", &TRIANGLE_HE_ADC, TRIANGLE_MOSFET_PORT, TRIANGLE_MOSFET_PIN, DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "L1",       &L1_HE_ADC,       L1_MOSFET_PORT,       L1_MOSFET_PIN,       DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "R1",       &R1_HE_ADC,       R1_MOSFET_PORT,       R1_MOSFET_PIN,       DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "CROSS",    &CROSS_HE_ADC,    CROSS_MOSFET_PORT,    CROSS_MOSFET_PIN,    DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "CIRCLE",   &CIRCLE_HE_ADC,   CIRCLE_MOSFET_PORT,   CIRCLE_MOSFET_PIN,   DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "L2",       &L2_HE_ADC,       L2_MOSFET_PORT,       L2_MOSFET_PIN,       DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "R2",       &R2_HE_ADC,       R2_MOSFET_PORT,       R2_MOSFET_PIN,       DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "L3",       &L3_HE_ADC,       L3_MOSFET_PORT,       L3_MOSFET_PIN,       DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET },
+  { "R3",       &R3_HE_ADC,       R3_MOSFET_PORT,       R3_MOSFET_PIN,       DEFAULT_PRESS_THRESHOLD, DEFAULT_RELEASE_THRESHOLD, 0U, GPIO_PIN_RESET }
+};
+
+static RotaryEncoder rotary_encoder =
+{
+  GPIOB, GPIO_PIN_0,
+  GPIOB, GPIO_PIN_1,
+  GPIOB, GPIO_PIN_2,
+  0U,
+  0U,
+  0U,
+  GPIO_PIN_SET,
+  GPIO_PIN_SET,
+  0U,
+  0U
+};
+
+static GPIO_PinState oled_menu_button_stable_state = GPIO_PIN_SET;
+static GPIO_PinState oled_menu_button_last_raw_state = GPIO_PIN_SET;
+static uint32_t oled_menu_button_last_change_ms = 0U;
+
+static InputEvents input_events = {0U, 0U, 0U, 0U};
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 /* USER CODE BEGIN PFP */
@@ -63,23 +196,111 @@ static void MX_ADC2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static uint32_t Read_Hall_ADC(void)
+static void Update_Button(ButtonChannel *button)
 {
-  uint32_t value = 0;
+  button->adc_value = *button->adc_value_source;
 
-  if (HAL_ADC_Start(&hadc2) != HAL_OK)
+  if (button->output_state == GPIO_PIN_RESET && button->adc_value >= button->press_threshold)
   {
-    Error_Handler();
+    button->output_state = GPIO_PIN_SET;
+  }
+  else if (button->output_state == GPIO_PIN_SET && button->adc_value <= button->release_threshold)
+  {
+    button->output_state = GPIO_PIN_RESET;
   }
 
-  if (HAL_ADC_PollForConversion(&hadc2, 10) == HAL_OK)
+  HAL_GPIO_WritePin(button->output_port, button->output_pin, button->output_state);
+}
+
+static void Update_All_Buttons(void)
+{
+  for (uint32_t i = 0U; i < BUTTON_COUNT; i++)
   {
-    value = HAL_ADC_GetValue(&hadc2);
+    Update_Button(&buttons[i]);
+  }
+}
+
+static uint8_t Read_Rotary_AB(const RotaryEncoder *encoder)
+{
+  uint8_t a = (HAL_GPIO_ReadPin(encoder->a_port, encoder->a_pin) == GPIO_PIN_SET) ? 1U : 0U;
+  uint8_t b = (HAL_GPIO_ReadPin(encoder->b_port, encoder->b_pin) == GPIO_PIN_SET) ? 1U : 0U;
+
+  return (uint8_t)((a << 1U) | b);
+}
+
+static void Update_Rotary_Encoder(RotaryEncoder *encoder)
+{
+  static const int8_t transition_table[16] =
+  {
+     0, -1,  1,  0,
+     1,  0,  0, -1,
+    -1,  0,  0,  1,
+     0,  1, -1,  0
+  };
+
+  uint32_t now = HAL_GetTick();
+  uint8_t raw_ab = Read_Rotary_AB(encoder);
+  GPIO_PinState raw_sw = HAL_GPIO_ReadPin(encoder->sw_port, encoder->sw_pin);
+
+  if (raw_ab != encoder->last_raw_ab)
+  {
+    encoder->last_raw_ab = raw_ab;
+    encoder->last_ab_change_ms = now;
+  }
+  else if ((now - encoder->last_ab_change_ms) >= ENCODER_DEBOUNCE_MS && raw_ab != encoder->stable_ab)
+  {
+    uint8_t transition = (uint8_t)((encoder->stable_ab << 2U) | raw_ab);
+    int8_t direction = transition_table[transition];
+
+    if (direction > 0)
+    {
+      input_events.rot_r = 1U;
+    }
+    else if (direction < 0)
+    {
+      input_events.rot_l = 1U;
+    }
+
+    encoder->stable_ab = raw_ab;
   }
 
-  HAL_ADC_Stop(&hadc2);
+  if (raw_sw != encoder->last_raw_sw)
+  {
+    encoder->last_raw_sw = raw_sw;
+    encoder->last_sw_change_ms = now;
+  }
+  else if ((now - encoder->last_sw_change_ms) >= ENCODER_SWITCH_DEBOUNCE_MS && raw_sw != encoder->stable_sw)
+  {
+    encoder->stable_sw = raw_sw;
+    encoder->switch_pressed = (raw_sw == GPIO_PIN_RESET) ? 1U : 0U;
 
-  return value;
+    if (encoder->switch_pressed != 0U)
+    {
+      input_events.rot_click = 1U;
+    }
+  }
+}
+
+static void Update_OLED_Menu_Button(void)
+{
+  uint32_t now = HAL_GetTick();
+  GPIO_PinState raw_state = HAL_GPIO_ReadPin(OLED_MENU_BUTTON_PORT, OLED_MENU_BUTTON_PIN);
+
+  if (raw_state != oled_menu_button_last_raw_state)
+  {
+    oled_menu_button_last_raw_state = raw_state;
+    oled_menu_button_last_change_ms = now;
+  }
+  else if ((now - oled_menu_button_last_change_ms) >= OLED_MENU_BUTTON_DEBOUNCE_MS &&
+           raw_state != oled_menu_button_stable_state)
+  {
+    oled_menu_button_stable_state = raw_state;
+
+    if (raw_state == GPIO_PIN_RESET)
+    {
+      input_events.oled_menu_button = 1U;
+    }
+  }
 }
 
 /* USER CODE END 0 */
@@ -113,10 +334,26 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
+  if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   if (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc1_values, ADC1_BUTTON_COUNT) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  if (HAL_ADC_Start_DMA(&hadc2, (uint32_t *)adc2_values, ADC2_BUTTON_COUNT) != HAL_OK)
   {
     Error_Handler();
   }
@@ -130,18 +367,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    hall_adc_value = Read_Hall_ADC();
-
-    if (hall_output_state == GPIO_PIN_RESET && hall_adc_value >= HALL_PRESS_THRESHOLD)
-    {
-      hall_output_state = GPIO_PIN_SET;
-    }
-    else if (hall_output_state == GPIO_PIN_SET && hall_adc_value <= HALL_RELEASE_THRESHOLD)
-    {
-      hall_output_state = GPIO_PIN_RESET;
-    }
-
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, hall_output_state);
+    Update_All_Buttons();
+    Update_Rotary_Encoder(&rotary_encoder);
+    Update_OLED_Menu_Button();
     HAL_Delay(1);
   }
   /* USER CODE END 3 */
@@ -213,16 +441,16 @@ static void MX_ADC1_Init(void)
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.GainCompensation = 0;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.NbrOfConversion = ADC1_BUTTON_COUNT;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
-  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
   hadc1.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -242,9 +470,58 @@ static void MX_ADC1_Init(void)
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
-  sConfig.SingleDiff = ADC_DIFFERENTIAL_ENDED;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Rank = ADC_REGULAR_RANK_2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Rank = ADC_REGULAR_RANK_3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = ADC_REGULAR_RANK_4;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_6;
+  sConfig.Rank = ADC_REGULAR_RANK_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_7;
+  sConfig.Rank = ADC_REGULAR_RANK_6;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_8;
+  sConfig.Rank = ADC_REGULAR_RANK_7;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_9;
+  sConfig.Rank = ADC_REGULAR_RANK_8;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -280,16 +557,16 @@ static void MX_ADC2_Init(void)
   hadc2.Init.Resolution = ADC_RESOLUTION_12B;
   hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc2.Init.GainCompensation = 0;
-  hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc2.Init.ScanConvMode = ADC_SCAN_ENABLE;
+  hadc2.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc2.Init.LowPowerAutoWait = DISABLE;
-  hadc2.Init.ContinuousConvMode = DISABLE;
-  hadc2.Init.NbrOfConversion = 1;
+  hadc2.Init.ContinuousConvMode = ENABLE;
+  hadc2.Init.NbrOfConversion = ADC2_BUTTON_COUNT;
   hadc2.Init.DiscontinuousConvMode = DISABLE;
   hadc2.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc2.Init.DMAContinuousRequests = DISABLE;
-  hadc2.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc2.Init.DMAContinuousRequests = ENABLE;
+  hadc2.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
   hadc2.Init.OversamplingMode = DISABLE;
   if (HAL_ADC_Init(&hadc2) != HAL_OK)
   {
@@ -308,9 +585,64 @@ static void MX_ADC2_Init(void)
   {
     Error_Handler();
   }
+
+  sConfig.Channel = ADC_CHANNEL_13;
+  sConfig.Rank = ADC_REGULAR_RANK_2;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Rank = ADC_REGULAR_RANK_3;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = ADC_REGULAR_RANK_4;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_5;
+  sConfig.Rank = ADC_REGULAR_RANK_5;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_11;
+  sConfig.Rank = ADC_REGULAR_RANK_6;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE BEGIN ADC2_Init 2 */
 
   /* USER CODE END ADC2_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMAMUX1_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+  /* DMA1_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
 
 }
 
@@ -345,7 +677,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pins : PB0 PB1 PB2 */
   GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB10 PB11 PB12 PB3
@@ -379,6 +711,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
