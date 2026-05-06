@@ -17,20 +17,22 @@ The intended controller has:
 - 14 Hall-effect analog button sensors
 - 14 STM32-controlled gate outputs
 - A Brook board handling the final controller/USB interface
-- Future support for rapid trigger, per-button tuning, calibration, settings storage, and an OLED/menu interface
+- Future support for rapid trigger, per-button tuning, calibration, and an OLED/menu interface
 
 ## Current Status
 
-This is an early STM32CubeMX/IAR firmware scaffold. It currently has a working 14-button polling structure, but it is not final rapid-trigger firmware yet.
+This is an early STM32CubeMX/IAR firmware scaffold. It currently has a working 14-button DMA-backed scan structure, but it is not final rapid-trigger firmware yet.
 
 Implemented:
 
 - GPIO, ADC1, and ADC2 initialization
 - ADC1/ADC2 single-ended calibration
-- 14 Hall ADC channels polled from `Core/Src/hall_buttons.c`
+- 14 Hall ADC channels scanned continuously into DMA buffers
 - 14 mapped GPIO gate outputs for Brook switching
 - Simple global press/release thresholds with hysteresis
-- Runtime settings backend for rapid trigger enable, actuation/release distance, and calibration mode
+- Runtime settings backend for profiles, routing, rapid trigger enable, actuation/release distance, and calibration mode
+- 4 programmable controller profiles, with Profile 0 defaulting to one-to-one Hall-to-gate routing
+- Flash-backed settings/profile storage in the last reserved 2 KB flash page
 - A clean `main.c` loop that delegates Hall processing to a separate module
 
 Not implemented yet:
@@ -38,11 +40,9 @@ Not implemented yet:
 - Rapid trigger algorithm
 - Per-button thresholds
 - Calibration workflow
-- Flash-backed settings
 - OLED/display/menu logic
-- Profiles
 - SOCD cleaning
-- ADC DMA/timer-triggered scanning
+- Timer-triggered ADC scanning
 
 ## Current Button Logic
 
@@ -54,11 +54,21 @@ Thresholds are derived from the actuation distance in `Core/Src/settings.c`:
 
 The current default keeps the midpoint near the original `2200` press / `1800` release behavior, but the menu backend can now adjust that distance. The same setting controls the press and release gap symmetrically for now.
 
-Settings currently exist in RAM only:
+ADC1 and ADC2 run continuous scan conversions with circular DMA. `hall_buttons.c` reads the latest samples from the DMA buffers and updates the gate outputs without blocking on `HAL_ADC_PollForConversion(...)`.
+
+DMA setup is currently hand-written in `Core/Src/board.c`. The `.ioc` file tracks the ADC scan channel order, but future CubeMX regeneration may not preserve the manual DMA initialization unless it is re-applied or modeled in CubeMX.
+
+Settings currently include:
 
 - rapid trigger enabled/disabled
 - actuation/release distance
 - calibration mode enabled/disabled
+- active profile index
+- 4 profile routing tables
+
+Each physical Hall source can route to any physical gate output or be disabled. Profile 0 defaults to one-to-one routing, so `LMOD_HE` drives `L3_GATE` and `RMOD_HE` drives `R3_GATE`. A later OLED/rotary menu can reprogram that profile so, for example, `LMOD_HE` contributes to `LEFT_GATE` and `RMOD_HE` contributes to `RIGHT_GATE`. Shared outputs are OR-combined, so multiple Hall sources can target one gate without overwriting each other.
+
+Settings load from flash during `Settings_Init()` if the saved record has the expected magic, version, length, and CRC. `Settings_Save()` writes the current settings/profile store. The IAR flash linker file reserves the last flash page by ending application ROM at `0x0807F7FF`; settings storage starts at `0x0807F800`.
 
 ## Pin Map
 
@@ -115,11 +125,13 @@ Important files:
 
 - `Core/Src/main.c` - small startup and application loop coordinator
 - `Core/Src/app.c` - application init and one-pass loop work
-- `Core/Src/board.c` - HAL startup, clock, GPIO, ADC init, and ADC calibration
+- `Core/Src/board.c` - HAL startup, clock, GPIO, ADC/DMA init, ADC calibration, and ADC DMA start
 - `Core/Src/app_error.c` - fail-stop error/assert handlers
 - `Core/Src/settings.c` - runtime settings backend for future OLED/menu control
-- `Core/Src/hall_buttons.c` - Hall polling, thresholds, state, and output mapping
+- `Core/Src/settings_storage.c` - flash-backed settings/profile persistence
+- `Core/Src/hall_buttons.c` - Hall DMA sample consumption, thresholds, state, and output mapping
 - `Core/Inc/app.h`, `Core/Inc/board.h`, `Core/Inc/settings.h` - application, board, and settings interfaces
+- `Core/Inc/settings_storage.h` - settings storage interface
 - `Core/Inc/hall_buttons.h` - Hall button module interface
 - `STM Projects.ioc` - CubeMX pin/peripheral configuration
 - `EWARM/STM Projects.ewp` - IAR project file
@@ -145,19 +157,18 @@ Near term:
 - Validate all 14 Hall inputs on hardware
 - Confirm gate polarity through the Brook board switching path
 - Replace global thresholds with per-button thresholds
+- Add OLED/rotary UI for editing active profile routes
 - Add raw ADC debug/readout support
 
 Medium term:
 
 - Add calibration
-- Add settings defaults and flash storage
 - Add rapid trigger
 - Split button decision logic and output driving into their own modules
 
 Long term:
 
 - Add OLED/display and menu support
-- Add profiles
 - Add SOCD cleaning if needed
-- Move ADC acquisition to timer-triggered DMA scanning
+- Move ADC acquisition from software-start continuous scan to timer-triggered DMA scanning if needed
 - Rename project files to remove spaces when safe

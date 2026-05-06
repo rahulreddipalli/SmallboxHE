@@ -26,7 +26,7 @@ typedef enum
   HALL_BUTTON_COUNT
 } HallButtonId;
 
-void Hall_Buttons_Init(ADC_HandleTypeDef *adc1, ADC_HandleTypeDef *adc2);
+void Hall_Buttons_Init(const volatile uint16_t *adc1_samples, const volatile uint16_t *adc2_samples);
 void Hall_Buttons_UpdateAll(void);
 void Hall_Buttons_ApplySettings(void);
 uint32_t Hall_Buttons_GetAdcValue(HallButtonId button);

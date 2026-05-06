@@ -1095,6 +1095,9 @@
           <name>$PROJ_DIR$/../Core/Src/settings.c</name>
         </file>
         <file>
+          <name>$PROJ_DIR$/../Core/Src/settings_storage.c</name>
+        </file>
+        <file>
           <name>$PROJ_DIR$/../Core/Src/hall_buttons.c</name>
         </file>
         <file>
