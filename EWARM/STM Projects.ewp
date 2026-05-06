@@ -1092,6 +1092,9 @@
           <name>$PROJ_DIR$/../Core/Src/app_error.c</name>
         </file>
         <file>
+          <name>$PROJ_DIR$/../Core/Src/settings.c</name>
+        </file>
+        <file>
           <name>$PROJ_DIR$/../Core/Src/hall_buttons.c</name>
         </file>
         <file>

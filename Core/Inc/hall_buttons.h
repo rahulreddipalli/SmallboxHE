@@ -28,6 +28,9 @@ typedef enum
 
 void Hall_Buttons_Init(ADC_HandleTypeDef *adc1, ADC_HandleTypeDef *adc2);
 void Hall_Buttons_UpdateAll(void);
+void Hall_Buttons_ApplySettings(void);
+uint32_t Hall_Buttons_GetAdcValue(HallButtonId button);
+GPIO_PinState Hall_Buttons_GetGateState(HallButtonId button);
 
 #ifdef __cplusplus
 }
