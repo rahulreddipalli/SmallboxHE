@@ -7,7 +7,24 @@ extern "C" {
 
 #include "main.h"
 
-#define HALL_BUTTON_COUNT 14U
+typedef enum
+{
+  HALL_BUTTON_LEFT = 0,
+  HALL_BUTTON_DOWN,
+  HALL_BUTTON_RIGHT,
+  HALL_BUTTON_UP,
+  HALL_BUTTON_SQUARE,
+  HALL_BUTTON_TRIANGLE,
+  HALL_BUTTON_L1,
+  HALL_BUTTON_R1,
+  HALL_BUTTON_CROSS,
+  HALL_BUTTON_CIRCLE,
+  HALL_BUTTON_L2,
+  HALL_BUTTON_R2,
+  HALL_BUTTON_L3,
+  HALL_BUTTON_R3,
+  HALL_BUTTON_COUNT
+} HallButtonId;
 
 void Hall_Buttons_Init(ADC_HandleTypeDef *adc1, ADC_HandleTypeDef *adc2);
 void Hall_Buttons_UpdateAll(void);

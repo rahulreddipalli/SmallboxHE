@@ -2,15 +2,15 @@
 
 typedef struct
 {
-  ADC_HandleTypeDef **adc;
-  uint32_t channel;
-  GPIO_TypeDef *output_port;
-  uint16_t output_pin;
+  ADC_HandleTypeDef **hall_adc;
+  uint32_t hall_adc_channel;
+  GPIO_TypeDef *brook_output_port;
+  uint16_t brook_output_pin;
   uint32_t press_threshold;
   uint32_t release_threshold;
-  uint32_t value;
-  GPIO_PinState output_state;
-} HallButton;
+  uint32_t hall_adc_value;
+  GPIO_PinState brook_output_state;
+} HallButtonMap;
 
 static ADC_HandleTypeDef *hall_adc1 = NULL;
 static ADC_HandleTypeDef *hall_adc2 = NULL;
@@ -18,22 +18,25 @@ static ADC_HandleTypeDef *hall_adc2 = NULL;
 static const uint32_t HALL_PRESS_THRESHOLD = 2200;
 static const uint32_t HALL_RELEASE_THRESHOLD = 1800;
 
-static HallButton hall_buttons[HALL_BUTTON_COUNT] =
+#define HALL_BUTTON_MAP(hall_adc, adc_channel, output_port, output_pin) \
+  { hall_adc, adc_channel, output_port, output_pin, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET }
+
+static HallButtonMap hall_button_map[HALL_BUTTON_COUNT] =
 {
-  { &hall_adc2, ADC_CHANNEL_17, GPIOA, GPIO_PIN_8,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_1,  GPIOA, GPIO_PIN_9,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_2,  GPIOA, GPIO_PIN_10, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_3,  GPIOA, GPIO_PIN_11, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_4,  GPIOB, GPIO_PIN_3,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc2, ADC_CHANNEL_13, GPIOB, GPIO_PIN_4,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc2, ADC_CHANNEL_3,  GPIOB, GPIO_PIN_5,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc2, ADC_CHANNEL_4,  GPIOB, GPIO_PIN_6,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_6,  GPIOB, GPIO_PIN_7,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_7,  GPIOB, GPIO_PIN_9,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_8,  GPIOB, GPIO_PIN_10, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc1, ADC_CHANNEL_9,  GPIOB, GPIO_PIN_11, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc2, ADC_CHANNEL_5,  GPIOB, GPIO_PIN_12, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET },
-  { &hall_adc2, ADC_CHANNEL_11, GPIOC, GPIO_PIN_6,  HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET }
+  [HALL_BUTTON_LEFT]     = HALL_BUTTON_MAP(&hall_adc2, ADC_CHANNEL_17, GPIOA, GPIO_PIN_10), /* LEFT_HE -> LEFT_NPN */
+  [HALL_BUTTON_DOWN]     = HALL_BUTTON_MAP(&hall_adc2, ADC_CHANNEL_13, GPIOA, GPIO_PIN_9),  /* DOWN_HE -> DOWN_NPN */
+  [HALL_BUTTON_RIGHT]    = HALL_BUTTON_MAP(&hall_adc2, ADC_CHANNEL_3,  GPIOA, GPIO_PIN_8),  /* RIGHT_HE -> RIGHT_NPN */
+  [HALL_BUTTON_UP]       = HALL_BUTTON_MAP(&hall_adc2, ADC_CHANNEL_4,  GPIOC, GPIO_PIN_6),  /* UP_HE -> UP_NPN */
+  [HALL_BUTTON_SQUARE]   = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_1,  GPIOC, GPIO_PIN_7),  /* SQUARE_HE -> SQUARE_NPN */
+  [HALL_BUTTON_TRIANGLE] = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_2,  GPIOB, GPIO_PIN_3),  /* TRIANGLE_HE -> TRIANGLE_NPN */
+  [HALL_BUTTON_L1]       = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_3,  GPIOB, GPIO_PIN_4),  /* L1_HE -> L1_NPN */
+  [HALL_BUTTON_R1]       = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_4,  GPIOB, GPIO_PIN_5),  /* R1_HE -> R1_NPN */
+  [HALL_BUTTON_CROSS]    = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_6,  GPIOB, GPIO_PIN_6),  /* CROSS_HE -> CROSS_NPN */
+  [HALL_BUTTON_CIRCLE]   = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_7,  GPIOB, GPIO_PIN_7),  /* CIRCLE_HE -> CIRCLE_NPN */
+  [HALL_BUTTON_L2]       = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_8,  GPIOC, GPIO_PIN_9),  /* L2_HE -> L2_NPN */
+  [HALL_BUTTON_R2]       = HALL_BUTTON_MAP(&hall_adc1, ADC_CHANNEL_9,  GPIOC, GPIO_PIN_8),  /* R2_HE -> R2_NPN */
+  [HALL_BUTTON_L3]       = HALL_BUTTON_MAP(&hall_adc2, ADC_CHANNEL_5,  GPIOA, GPIO_PIN_11), /* LMOD_HE -> L3_NPN */
+  [HALL_BUTTON_R3]       = HALL_BUTTON_MAP(&hall_adc2, ADC_CHANNEL_11, GPIOB, GPIO_PIN_9)   /* RMOD_HE -> R3_NPN */
 };
 
 static uint32_t Hall_ReadADC(ADC_HandleTypeDef *hadc, uint32_t channel)
@@ -68,27 +71,27 @@ static uint32_t Hall_ReadADC(ADC_HandleTypeDef *hadc, uint32_t channel)
   return value;
 }
 
-static void Hall_Button_Update(HallButton *button)
+static void Hall_Button_Update(HallButtonMap *button)
 {
-  ADC_HandleTypeDef *adc = *button->adc;
+  ADC_HandleTypeDef *adc = *button->hall_adc;
 
   if (adc == NULL)
   {
     Error_Handler();
   }
 
-  button->value = Hall_ReadADC(adc, button->channel);
+  button->hall_adc_value = Hall_ReadADC(adc, button->hall_adc_channel);
 
-  if (button->output_state == GPIO_PIN_RESET && button->value >= button->press_threshold)
+  if (button->brook_output_state == GPIO_PIN_RESET && button->hall_adc_value >= button->press_threshold)
   {
-    button->output_state = GPIO_PIN_SET;
+    button->brook_output_state = GPIO_PIN_SET;
   }
-  else if (button->output_state == GPIO_PIN_SET && button->value <= button->release_threshold)
+  else if (button->brook_output_state == GPIO_PIN_SET && button->hall_adc_value <= button->release_threshold)
   {
-    button->output_state = GPIO_PIN_RESET;
+    button->brook_output_state = GPIO_PIN_RESET;
   }
 
-  HAL_GPIO_WritePin(button->output_port, button->output_pin, button->output_state);
+  HAL_GPIO_WritePin(button->brook_output_port, button->brook_output_pin, button->brook_output_state);
 }
 
 void Hall_Buttons_Init(ADC_HandleTypeDef *adc1, ADC_HandleTypeDef *adc2)
@@ -103,6 +106,6 @@ void Hall_Buttons_UpdateAll(void)
 
   for (index = 0; index < HALL_BUTTON_COUNT; index++)
   {
-    Hall_Button_Update(&hall_buttons[index]);
+    Hall_Button_Update(&hall_button_map[index]);
   }
 }

@@ -1083,6 +1083,15 @@
           <name>$PROJ_DIR$/../Core/Src/main.c</name>
         </file>
         <file>
+          <name>$PROJ_DIR$/../Core/Src/app.c</name>
+        </file>
+        <file>
+          <name>$PROJ_DIR$/../Core/Src/board.c</name>
+        </file>
+        <file>
+          <name>$PROJ_DIR$/../Core/Src/app_error.c</name>
+        </file>
+        <file>
           <name>$PROJ_DIR$/../Core/Src/hall_buttons.c</name>
         </file>
         <file>

@@ -1,0 +1,43 @@
+{
+  "folders": [
+    {
+      "name": "Core",
+      "path": "Core"
+    },
+    {
+      "name": "EWARM",
+      "path": "EWARM"
+    },
+    {
+      "name": "STM32G4xx HAL Driver",
+      "path": "Drivers/STM32G4xx_HAL_Driver"
+    },
+    {
+      "name": "CMSIS Core",
+      "path": "Drivers/CMSIS/Core"
+    },
+    {
+      "name": "CMSIS Device",
+      "path": "Drivers/CMSIS/Device"
+    },
+    {
+      "name": "CMSIS DSP Source",
+      "path": "Drivers/CMSIS/DSP/Source"
+    },
+    {
+      "name": "CMSIS DSP TestSuite",
+      "path": "Drivers/CMSIS/DSP/DSP_Lib_TestSuite"
+    },
+    {
+      "name": "CMSIS DSP RefLibs",
+      "path": "Drivers/CMSIS/DSP/DSP_Lib_TestSuite/RefLibs"
+    },
+    {
+      "name": "CMSIS DSP Variance Example",
+      "path": "Drivers/CMSIS/DSP/Examples/ARM/arm_variance_example"
+    }
+  ],
+  "settings": {
+    "cmake.autoSelectActiveFolder": true
+  }
+}

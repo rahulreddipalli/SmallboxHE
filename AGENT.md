@@ -26,10 +26,11 @@ The current firmware is a bring-up scaffold, not final low-latency firmware.
 
 Implemented:
 
-- `main.c` initializes GPIO, ADC1, and ADC2.
-- `main.c` calibrates ADC1 and ADC2 in single-ended mode.
-- `main.c` calls `Hall_Buttons_Init(&hadc1, &hadc2)`.
-- Main loop calls `Hall_Buttons_UpdateAll()` then `HAL_Delay(1)`.
+- `main.c` calls `Board_Init()`, `App_Init()`, then repeatedly calls `App_RunOnce()`.
+- `board.c` initializes HAL, clock, GPIO, ADC1, and ADC2.
+- `board.c` calibrates ADC1 and ADC2 in single-ended mode.
+- `app.c` connects the board ADC handles to `Hall_Buttons_Init(...)`.
+- `app.c` runs `Hall_Buttons_UpdateAll()` then `HAL_Delay(1)` once per tick.
 - `hall_buttons.c` polls 14 ADC channels one at a time.
 - `hall_buttons.c` drives 14 mapped GPIO outputs.
 - Button state uses global fixed hysteresis thresholds.
@@ -37,12 +38,12 @@ Implemented:
 Current `main.c` shape:
 
 ```c
-Hall_Buttons_Init(&hadc1, &hadc2);
+Board_Init();
+App_Init();
 
 while (1)
 {
-  Hall_Buttons_UpdateAll();
-  HAL_Delay(1);
+  App_RunOnce();
 }
 ```
 
@@ -80,39 +81,34 @@ Known limitations:
 
 Source of truth in code: `Core/Src/hall_buttons.c`.
 
-Button 0 is the known prototype path and should not be changed unless the user explicitly asks:
-
-```text
-PA4 / ADC2_IN17 -> PA8
-```
-
 | Button index | Hall input | ADC channel | Brook/MOSFET output |
 |---:|---|---|---|
-| 0 | `PA4` | `ADC2_IN17` | `PA8` |
-| 1 | `PA0` | `ADC1_IN1` | `PA9` |
-| 2 | `PA1` | `ADC1_IN2` | `PA10` |
-| 3 | `PA2` | `ADC1_IN3` | `PA11` |
-| 4 | `PA3` | `ADC1_IN4` | `PB3` |
-| 5 | `PA5` | `ADC2_IN13` | `PB4` |
-| 6 | `PA6` | `ADC2_IN3` | `PB5` |
-| 7 | `PA7` | `ADC2_IN4` | `PB6` |
-| 8 | `PC0` | `ADC1_IN6` | `PB7` |
-| 9 | `PC1` | `ADC1_IN7` | `PB9` |
-| 10 | `PC2` | `ADC1_IN8` | `PB10` |
-| 11 | `PC3` | `ADC1_IN9` | `PB11` |
-| 12 | `PC4` | `ADC2_IN5` | `PB12` |
-| 13 | `PC5` | `ADC2_IN11` | `PC6` |
+| 0 / Left | `PA4` / `LEFT_HE` | `ADC2_IN17` | `PA10` / `LEFT_NPN` |
+| 1 / Down | `PA5` / `DOWN_HE` | `ADC2_IN13` | `PA9` / `DOWN_NPN` |
+| 2 / Right | `PA6` / `RIGHT_HE` | `ADC2_IN3` | `PA8` / `RIGHT_NPN` |
+| 3 / Up | `PA7` / `UP_HE` | `ADC2_IN4` | `PC6` / `UP_NPN` |
+| 4 / Square | `PA0` / `SQUARE_HE` | `ADC1_IN1` | `PC7` / `SQUARE_NPN` |
+| 5 / Triangle | `PA1` / `TRIANGLE_HE` | `ADC1_IN2` | `PB3` / `TRIANGLE_NPN` |
+| 6 / L1 | `PA2` / `L1_HE` | `ADC1_IN3` | `PB4` / `L1_NPN` |
+| 7 / R1 | `PA3` / `R1_HE` | `ADC1_IN4` | `PB5` / `R1_NPN` |
+| 8 / Cross | `PC0` / `CROSS_HE` | `ADC1_IN6` | `PB6` / `CROSS_NPN` |
+| 9 / Circle | `PC1` / `CIRCLE_HE` | `ADC1_IN7` | `PB7` / `CIRCLE_NPN` |
+| 10 / L2 | `PC2` / `L2_HE` | `ADC1_IN8` | `PC9` / `L2_NPN` |
+| 11 / R2 | `PC3` / `R2_HE` | `ADC1_IN9` | `PC8` / `R2_NPN` |
+| 12 / L3 | `PC4` / `LMOD_HE` | `ADC2_IN5` | `PA11` / `L3_NPN` |
+| 13 / R3 | `PC5` / `RMOD_HE` | `ADC2_IN11` | `PB9` / `R3_NPN` |
 
-Additional configured pins:
+Additional schematic/firmware pins:
 
 | Pin | Current config | Intended use / note |
 |---|---|---|
 | `PB0` | GPIO input | Spare/user input candidate |
 | `PB1` | GPIO input | Spare/user input candidate |
 | `PB2` | GPIO input | Spare/user input candidate |
-| `PC7` | GPIO output | Spare output |
-| `PC8` | GPIO output | Spare output |
-| `PC9` | GPIO output | Spare output |
+| `PA12` | Not configured in firmware | `MENU` on the schematic, not currently driven by Hall button firmware |
+| `PB10` | GPIO output | `DC` display/control candidate |
+| `PB11` | GPIO output | `RST` display/control candidate |
+| `PB12` | GPIO output | `CS` display/control candidate |
 | `PB13` | `SPI2_SCK` alternate-function pin | Reserved for possible SPI OLED/display |
 | `PB15` | `SPI2_MOSI` alternate-function pin | Reserved for possible SPI OLED/display |
 | `PA13` | SWDIO | Debug/programming |
@@ -132,9 +128,7 @@ Current assumptions:
 
 Unknowns that must be clarified before final firmware decisions:
 
-- Exact button labels/order for the 14 buttons.
 - Brook board model.
-- Which Brook input each MOSFET output connects to.
 - Hall sensor part number.
 - Hall sensor output voltage range.
 - Whether ADC value increases or decreases when pressed.
@@ -159,7 +153,12 @@ Target:
 
 Important files:
 
-- `Core/Src/main.c` - generated/application entry point. Keep simple.
+- `Core/Src/main.c` - thin startup and loop coordinator.
+- `Core/Src/app.c` - application init and one-pass loop work.
+- `Core/Inc/app.h` - app module public interface.
+- `Core/Src/board.c` - HAL startup, system clock, GPIO, ADC init, and ADC calibration.
+- `Core/Inc/board.h` - board init and ADC handle accessors.
+- `Core/Src/app_error.c` - shared `Error_Handler` and assert handler.
 - `Core/Src/hall_buttons.c` - current Hall polling and output mapping.
 - `Core/Inc/hall_buttons.h` - Hall module public interface.
 - `Core/Src/stm32g4xx_hal_msp.c` - generated pin/clock MSP setup.
@@ -181,7 +180,7 @@ Safe places:
 
 Risky places:
 
-- Generated init functions in `main.c`.
+- CubeMX-generated init logic that has been moved into `board.c`.
 - Generated MSP functions in `stm32g4xx_hal_msp.c`.
 - Project metadata if CubeMX regenerates.
 
@@ -196,7 +195,7 @@ When changing pins/peripherals:
 
 - Read this file and `README.md` before making architectural changes.
 - Prefer small modules over expanding `main.c`.
-- Preserve `PA4 / ADC2_IN17 -> PA8` unless explicitly asked to change it.
+- Keep Hall input names and Brook/MOSFET output names aligned with the schematic labels.
 - Keep Hall ADC inputs single-ended unless explicit hardware evidence says otherwise.
 - Do not edit `Drivers/` unless there is a specific HAL/vendor reason.
 - Avoid unrelated generated/vendor churn.
@@ -211,9 +210,11 @@ When changing pins/peripherals:
 Current:
 
 ```text
-Core/Src/main.c
-Core/Src/hall_buttons.c
-Core/Inc/hall_buttons.h
+Core/Src/main.c         startup and loop coordination
+Core/Src/app.c          application init and per-loop tick
+Core/Src/board.c        HAL/peripheral initialization
+Core/Src/app_error.c    fail-stop error/assert handlers
+Core/Src/hall_buttons.c Hall polling and Brook/MOSFET output mapping
 ```
 
 Desired future split:

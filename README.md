@@ -56,29 +56,28 @@ Each button is pressed when its ADC value reaches `2200` and released when it fa
 
 ## Pin Map
 
-Button 0 preserves the known prototype path: `PA4 / ADC2_IN17 -> PA8`.
-
 | Button | Hall input | ADC channel | Brook/MOSFET output |
 |---:|---|---|---|
-| 0 | `PA4` | `ADC2_IN17` | `PA8` |
-| 1 | `PA0` | `ADC1_IN1` | `PA9` |
-| 2 | `PA1` | `ADC1_IN2` | `PA10` |
-| 3 | `PA2` | `ADC1_IN3` | `PA11` |
-| 4 | `PA3` | `ADC1_IN4` | `PB3` |
-| 5 | `PA5` | `ADC2_IN13` | `PB4` |
-| 6 | `PA6` | `ADC2_IN3` | `PB5` |
-| 7 | `PA7` | `ADC2_IN4` | `PB6` |
-| 8 | `PC0` | `ADC1_IN6` | `PB7` |
-| 9 | `PC1` | `ADC1_IN7` | `PB9` |
-| 10 | `PC2` | `ADC1_IN8` | `PB10` |
-| 11 | `PC3` | `ADC1_IN9` | `PB11` |
-| 12 | `PC4` | `ADC2_IN5` | `PB12` |
-| 13 | `PC5` | `ADC2_IN11` | `PC6` |
+| Left | `PA4` / `LEFT_HE` | `ADC2_IN17` | `PA10` / `LEFT_NPN` |
+| Down | `PA5` / `DOWN_HE` | `ADC2_IN13` | `PA9` / `DOWN_NPN` |
+| Right | `PA6` / `RIGHT_HE` | `ADC2_IN3` | `PA8` / `RIGHT_NPN` |
+| Up | `PA7` / `UP_HE` | `ADC2_IN4` | `PC6` / `UP_NPN` |
+| Square | `PA0` / `SQUARE_HE` | `ADC1_IN1` | `PC7` / `SQUARE_NPN` |
+| Triangle | `PA1` / `TRIANGLE_HE` | `ADC1_IN2` | `PB3` / `TRIANGLE_NPN` |
+| L1 | `PA2` / `L1_HE` | `ADC1_IN3` | `PB4` / `L1_NPN` |
+| R1 | `PA3` / `R1_HE` | `ADC1_IN4` | `PB5` / `R1_NPN` |
+| Cross | `PC0` / `CROSS_HE` | `ADC1_IN6` | `PB6` / `CROSS_NPN` |
+| Circle | `PC1` / `CIRCLE_HE` | `ADC1_IN7` | `PB7` / `CIRCLE_NPN` |
+| L2 | `PC2` / `L2_HE` | `ADC1_IN8` | `PC9` / `L2_NPN` |
+| R2 | `PC3` / `R2_HE` | `ADC1_IN9` | `PC8` / `R2_NPN` |
+| L3 | `PC4` / `LMOD_HE` | `ADC2_IN5` | `PA11` / `L3_NPN` |
+| R3 | `PC5` / `RMOD_HE` | `ADC2_IN11` | `PB9` / `R3_NPN` |
 
 Reserved or spare pins:
 
 - `PB0`, `PB1`, `PB2`: GPIO inputs, possible user/settings buttons
-- `PC7`, `PC8`, `PC9`: spare GPIO outputs
+- `PA12`: `MENU` on the schematic, not currently configured or driven by Hall button firmware
+- `PB10`, `PB11`, `PB12`: display/control outputs marked `DC`, `RST`, and `CS`
 - `PB13`: configured as `SPI2_SCK`, reserved for possible OLED
 - `PB15`: configured as `SPI2_MOSI`, reserved for possible OLED
 - `PA13`, `PA14`: SWD debug pins
@@ -108,8 +107,12 @@ EWARM/     IAR project, workspace, startup, and linker files
 
 Important files:
 
-- `Core/Src/main.c` - startup, CubeMX init calls, and simple main loop
+- `Core/Src/main.c` - small startup and application loop coordinator
+- `Core/Src/app.c` - application init and one-pass loop work
+- `Core/Src/board.c` - HAL startup, clock, GPIO, ADC init, and ADC calibration
+- `Core/Src/app_error.c` - fail-stop error/assert handlers
 - `Core/Src/hall_buttons.c` - Hall polling, thresholds, state, and output mapping
+- `Core/Inc/app.h`, `Core/Inc/board.h` - application and board interfaces
 - `Core/Inc/hall_buttons.h` - Hall button module interface
 - `STM Projects.ioc` - CubeMX pin/peripheral configuration
 - `EWARM/STM Projects.ewp` - IAR project file
