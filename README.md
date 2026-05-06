@@ -2,37 +2,63 @@
 
 SmallboxHE is experimental STM32 firmware for a Hall-effect hitbox-style controller adapter.
 
-The hardware concept is:
+It reads analog Hall-effect button sensors with an STM32, turns those readings into digital button states, and drives MOSFET outputs connected to a Brook controller board. The Brook board remains the USB/controller interface; the STM32 adds the Hall-effect behavior layer.
 
-- 14 Hall-effect button sensors feed analog voltages into STM32 ADC inputs.
-- The STM32 decides whether each button is pressed based on configurable trigger/release thresholds.
-- 14 STM32 outputs drive MOSFETs.
-- Those MOSFETs switch the corresponding input signals on a connected Brook controller board.
+## What It Does
 
-The goal is to add Hall-effect behavior, rapid trigger, and per-button tuning while still using the Brook board as the controller interface.
+Target signal path:
+
+```text
+Hall sensor -> STM32 ADC -> firmware button logic -> GPIO -> MOSFET -> Brook board input
+```
+
+The intended controller has:
+
+- 14 Hall-effect analog button sensors
+- 14 STM32-controlled MOSFET outputs
+- A Brook board handling the final controller/USB interface
+- Future support for rapid trigger, per-button tuning, calibration, settings storage, and an OLED/menu interface
 
 ## Current Status
 
-This repository is currently an early STM32CubeMX/IAR project scaffold.
+This is an early STM32CubeMX/IAR firmware scaffold. It currently has a working 14-button polling structure, but it is not final rapid-trigger firmware yet.
 
-Implemented firmware behavior:
+Implemented:
 
-- Initializes GPIO, ADC1, and ADC2.
-- Polls 14 configured Hall ADC channels from a button mapping table in `Core/Src/hall_buttons.c`.
-- Drives 14 mapped MOSFET/Brook output GPIOs.
-- Turns each output on above a press threshold and off below a release threshold.
-- Uses hysteresis so the output does not flicker around the threshold.
+- GPIO, ADC1, and ADC2 initialization
+- ADC1/ADC2 single-ended calibration
+- 14 Hall ADC channels polled from `Core/Src/hall_buttons.c`
+- 14 mapped GPIO outputs for Brook/MOSFET switching
+- Simple global press/release thresholds with hysteresis
+- A clean `main.c` loop that delegates Hall processing to a separate module
 
-Current test thresholds are in `Core/Src/hall_buttons.c`:
+Not implemented yet:
+
+- Rapid trigger
+- Per-button thresholds
+- Calibration
+- Flash-backed settings
+- OLED/display/menu logic
+- Profiles
+- SOCD cleaning
+- ADC DMA/timer-triggered scanning
+
+## Current Button Logic
+
+Thresholds are currently hardcoded in `Core/Src/hall_buttons.c`:
 
 ```c
 static const uint32_t HALL_PRESS_THRESHOLD = 2200;
 static const uint32_t HALL_RELEASE_THRESHOLD = 1800;
 ```
 
-Current firmware pin map:
+Each button is pressed when its ADC value reaches `2200` and released when it falls to `1800`. The gap is intentional hysteresis to prevent flicker near the threshold.
 
-| Button index | Hall input | ADC channel | Brook/MOSFET output |
+## Pin Map
+
+Button 0 preserves the known prototype path: `PA4 / ADC2_IN17 -> PA8`.
+
+| Button | Hall input | ADC channel | Brook/MOSFET output |
 |---:|---|---|---|
 | 0 | `PA4` | `ADC2_IN17` | `PA8` |
 | 1 | `PA0` | `ADC1_IN1` | `PA9` |
@@ -49,36 +75,50 @@ Current firmware pin map:
 | 12 | `PC4` | `ADC2_IN5` | `PB12` |
 | 13 | `PC5` | `ADC2_IN11` | `PC6` |
 
-## Target Hardware
+Reserved or spare pins:
+
+- `PB0`, `PB1`, `PB2`: GPIO inputs, possible user/settings buttons
+- `PC7`, `PC8`, `PC9`: spare GPIO outputs
+- `PB13`: configured as `SPI2_SCK`, reserved for possible OLED
+- `PB15`: configured as `SPI2_MOSI`, reserved for possible OLED
+- `PA13`, `PA14`: SWD debug pins
+
+SPI/OLED note: display pins are reserved, but SPI/OLED firmware is not configured yet.
+
+## Hardware / Toolchain
 
 - MCU: `STM32G474RET6`
-- STM32 family: `STM32G4`
+- Family: `STM32G4`
 - Package: `LQFP64`
-- Project generated with STM32CubeMX `6.17.0`
-- Firmware package: `STM32Cube FW_G4 V1.6.2`
+- CubeMX: `6.17.0`
+- STM32Cube firmware package: `STM32Cube FW_G4 V1.6.2`
 - Toolchain: IAR Embedded Workbench for ARM, EWARM `V8.50`
+- Workspace: `EWARM/Project.eww`
 
 ## Project Layout
 
 ```text
-Core/       Application source and headers
-Drivers/    STM32 HAL and CMSIS vendor files
-EWARM/      IAR project, workspace, startup, and linker files
-*.ioc       STM32CubeMX configuration
+Core/
+  Inc/      Application headers and generated STM32 headers
+  Src/      Application source and generated STM32 source
+Drivers/   STM32 HAL and CMSIS vendor files
+EWARM/     IAR project, workspace, startup, and linker files
+*.ioc      STM32CubeMX configuration
 ```
 
-Main files:
+Important files:
 
-- `Core/Src/main.c` - application entry point and simple main loop
-- `Core/Src/hall_buttons.c` - Hall ADC polling, thresholds, and output mapping
-- `Core/Inc/hall_buttons.h` - public Hall button module interface
-- `Core/Src/stm32g4xx_hal_msp.c` - generated peripheral pin/clock setup
-- `STM Projects.ioc` - CubeMX pin and peripheral configuration
-- `EWARM/Project.eww` - IAR workspace
+- `Core/Src/main.c` - startup, CubeMX init calls, and simple main loop
+- `Core/Src/hall_buttons.c` - Hall polling, thresholds, state, and output mapping
+- `Core/Inc/hall_buttons.h` - Hall button module interface
+- `STM Projects.ioc` - CubeMX pin/peripheral configuration
+- `EWARM/STM Projects.ewp` - IAR project file
+
+For deeper agent/developer context, see `AGENT.md`.
 
 ## Building
 
-Open the IAR workspace:
+Open:
 
 ```text
 EWARM/Project.eww
@@ -86,18 +126,28 @@ EWARM/Project.eww
 
 Then build/debug from IAR Embedded Workbench.
 
-## Development Notes
-
-When editing CubeMX-generated files, put custom code only inside `USER CODE BEGIN` / `USER CODE END` blocks. CubeMX can overwrite generated sections when the project is regenerated.
-
-Do not edit files under `Drivers/` unless there is a very specific reason. They are vendor-provided STM32 HAL/CMSIS files.
+When adding new `.c` files, also add them to `EWARM/STM Projects.ewp` so IAR includes them in the build.
 
 ## Roadmap
 
-- Read all 14 Hall sensors.
-- Map each sensor to its corresponding MOSFET output.
-- Add per-button press and release thresholds.
-- Add rapid-trigger behavior.
-- Add calibration/settings storage.
-- Add a board-side configuration interface.
-- Add safer project naming and cleanup generated/vendor files where practical.
+Near term:
+
+- Validate all 14 Hall inputs on hardware
+- Confirm output polarity through the MOSFET/Brook board path
+- Replace global thresholds with per-button thresholds
+- Add raw ADC debug/readout support
+
+Medium term:
+
+- Add calibration
+- Add settings defaults and flash storage
+- Add rapid trigger
+- Split button decision logic and output driving into their own modules
+
+Long term:
+
+- Add OLED/display and menu support
+- Add profiles
+- Add SOCD cleaning if needed
+- Move ADC acquisition to timer-triggered DMA scanning
+- Rename project files to remove spaces when safe
