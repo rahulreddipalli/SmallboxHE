@@ -18,17 +18,36 @@ This repository is currently an early STM32CubeMX/IAR project scaffold.
 Implemented firmware behavior:
 
 - Initializes GPIO, ADC1, and ADC2.
-- Reads one Hall sensor on `PA4` / `ADC2_IN17`.
-- Drives one test output on `PA8`.
-- Turns the output on above a press threshold and off below a release threshold.
+- Polls 14 configured Hall ADC channels from a button mapping table in `Core/Src/hall_buttons.c`.
+- Drives 14 mapped MOSFET/Brook output GPIOs.
+- Turns each output on above a press threshold and off below a release threshold.
 - Uses hysteresis so the output does not flicker around the threshold.
 
-Current test thresholds are in `Core/Src/main.c`:
+Current test thresholds are in `Core/Src/hall_buttons.c`:
 
 ```c
 static const uint32_t HALL_PRESS_THRESHOLD = 2200;
 static const uint32_t HALL_RELEASE_THRESHOLD = 1800;
 ```
+
+Current firmware pin map:
+
+| Button index | Hall input | ADC channel | Brook/MOSFET output |
+|---:|---|---|---|
+| 0 | `PA4` | `ADC2_IN17` | `PA8` |
+| 1 | `PA0` | `ADC1_IN1` | `PA9` |
+| 2 | `PA1` | `ADC1_IN2` | `PA10` |
+| 3 | `PA2` | `ADC1_IN3` | `PA11` |
+| 4 | `PA3` | `ADC1_IN4` | `PB3` |
+| 5 | `PA5` | `ADC2_IN13` | `PB4` |
+| 6 | `PA6` | `ADC2_IN3` | `PB5` |
+| 7 | `PA7` | `ADC2_IN4` | `PB6` |
+| 8 | `PC0` | `ADC1_IN6` | `PB7` |
+| 9 | `PC1` | `ADC1_IN7` | `PB9` |
+| 10 | `PC2` | `ADC1_IN8` | `PB10` |
+| 11 | `PC3` | `ADC1_IN9` | `PB11` |
+| 12 | `PC4` | `ADC2_IN5` | `PB12` |
+| 13 | `PC5` | `ADC2_IN11` | `PC6` |
 
 ## Target Hardware
 
@@ -50,7 +69,9 @@ EWARM/      IAR project, workspace, startup, and linker files
 
 Main files:
 
-- `Core/Src/main.c` - application entry point and current Hall sensor test
+- `Core/Src/main.c` - application entry point and simple main loop
+- `Core/Src/hall_buttons.c` - Hall ADC polling, thresholds, and output mapping
+- `Core/Inc/hall_buttons.h` - public Hall button module interface
 - `Core/Src/stm32g4xx_hal_msp.c` - generated peripheral pin/clock setup
 - `STM Projects.ioc` - CubeMX pin and peripheral configuration
 - `EWARM/Project.eww` - IAR workspace

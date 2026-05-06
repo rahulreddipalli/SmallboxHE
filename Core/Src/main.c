@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "hall_buttons.h"
 
 /* USER CODE END Includes */
 
@@ -44,11 +45,6 @@ ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc2;
 
 /* USER CODE BEGIN PV */
-static const uint32_t HALL_PRESS_THRESHOLD = 2200;
-static const uint32_t HALL_RELEASE_THRESHOLD = 1800;
-
-static uint32_t hall_adc_value = 0;
-static GPIO_PinState hall_output_state = GPIO_PIN_RESET;
 
 /* USER CODE END PV */
 
@@ -63,24 +59,6 @@ static void MX_ADC2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static uint32_t Read_Hall_ADC(void)
-{
-  uint32_t value = 0;
-
-  if (HAL_ADC_Start(&hadc2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  if (HAL_ADC_PollForConversion(&hadc2, 10) == HAL_OK)
-  {
-    value = HAL_ADC_GetValue(&hadc2);
-  }
-
-  HAL_ADC_Stop(&hadc2);
-
-  return value;
-}
 
 /* USER CODE END 0 */
 
@@ -116,10 +94,17 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
+  if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   if (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK)
   {
     Error_Handler();
   }
+
+  Hall_Buttons_Init(&hadc1, &hadc2);
 
   /* USER CODE END 2 */
 
@@ -130,18 +115,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    hall_adc_value = Read_Hall_ADC();
-
-    if (hall_output_state == GPIO_PIN_RESET && hall_adc_value >= HALL_PRESS_THRESHOLD)
-    {
-      hall_output_state = GPIO_PIN_SET;
-    }
-    else if (hall_output_state == GPIO_PIN_SET && hall_adc_value <= HALL_RELEASE_THRESHOLD)
-    {
-      hall_output_state = GPIO_PIN_RESET;
-    }
-
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, hall_output_state);
+    Hall_Buttons_UpdateAll();
     HAL_Delay(1);
   }
   /* USER CODE END 3 */
@@ -242,7 +216,7 @@ static void MX_ADC1_Init(void)
   sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
-  sConfig.SingleDiff = ADC_DIFFERENTIAL_ENDED;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
