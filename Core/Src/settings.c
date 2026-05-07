@@ -470,63 +470,6 @@ void Settings_ToggleRapidTrigger(void)
   Settings_SetRapidTriggerEnabled(Settings_IsRapidTriggerEnabled() == 0U);
 }
 
-uint8_t Settings_IsButtonRapidTriggerEnabled(HallButtonId button)
-{
-  const ButtonSettings *button_settings = Settings_GetButtonSettings(button);
-
-  if (button_settings == NULL)
-  {
-    return 0U;
-  }
-
-  return (Settings_IsRapidTriggerEnabled() && button_settings->rapid_trigger_enabled) ? 1U : 0U;
-}
-
-void Settings_SetButtonRapidTriggerEnabled(HallButtonId button, uint8_t enabled)
-{
-  if (button >= HALL_BUTTON_COUNT)
-  {
-    return;
-  }
-
-  Settings_GetMutableButtonSettings(button)->rapid_trigger_enabled = enabled ? 1U : 0U;
-
-  if (enabled != 0U)
-  {
-    Settings_SetRapidTriggerEnabled(1U);
-  }
-}
-
-void Settings_ToggleButtonRapidTrigger(HallButtonId button)
-{
-  if (button >= HALL_BUTTON_COUNT)
-  {
-    return;
-  }
-
-  Settings_SetButtonRapidTriggerEnabled(button, Settings_GetMutableButtonSettings(button)->rapid_trigger_enabled == 0U);
-}
-
-void Settings_SetButtonRapidTriggerPressDelta(HallButtonId button, uint16_t delta)
-{
-  if (button >= HALL_BUTTON_COUNT)
-  {
-    return;
-  }
-
-  Settings_GetMutableButtonSettings(button)->rapid_trigger_press_delta = Settings_ClampAdcValue(delta);
-}
-
-void Settings_SetButtonRapidTriggerReleaseDelta(HallButtonId button, uint16_t delta)
-{
-  if (button >= HALL_BUTTON_COUNT)
-  {
-    return;
-  }
-
-  Settings_GetMutableButtonSettings(button)->rapid_trigger_release_delta = Settings_ClampAdcValue(delta);
-}
-
 uint16_t Settings_GetActuationDistance(void)
 {
   return Settings_GetActiveProfile()->actuation_distance;

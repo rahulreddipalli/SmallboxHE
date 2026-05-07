@@ -84,11 +84,6 @@ void Settings_ResetButtonCalibration(HallButtonId button);
 uint8_t Settings_IsRapidTriggerEnabled(void);
 void Settings_SetRapidTriggerEnabled(uint8_t enabled);
 void Settings_ToggleRapidTrigger(void);
-uint8_t Settings_IsButtonRapidTriggerEnabled(HallButtonId button);
-void Settings_SetButtonRapidTriggerEnabled(HallButtonId button, uint8_t enabled);
-void Settings_ToggleButtonRapidTrigger(HallButtonId button);
-void Settings_SetButtonRapidTriggerPressDelta(HallButtonId button, uint16_t delta);
-void Settings_SetButtonRapidTriggerReleaseDelta(HallButtonId button, uint16_t delta);
 
 uint16_t Settings_GetActuationDistance(void);
 void Settings_SetActuationDistance(uint16_t distance);

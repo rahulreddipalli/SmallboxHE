@@ -8,7 +8,6 @@
 #define UI_RENDER_PERIOD_MS 50U
 #define UI_MENU_ENTRY_COUNT 7U
 #define UI_BUTTON_SETUP_FIELD_COUNT 6U
-#define UI_RAPID_TRIGGER_FIELD_COUNT 3U
 #define UI_PROFILE_FIELD_COUNT 4U
 #define UI_VALUE_STEP_ADC 10
 #define UI_VALUE_STEP_TRAVEL 10
@@ -154,7 +153,7 @@ static void Ui_HandleDashboard(UiEvent event)
   }
   else if (event == UI_EVT_DOUBLE_CLICK)
   {
-    Settings_ToggleButtonRapidTrigger(ui.selected_button);
+    Settings_ToggleRapidTrigger();
     Hall_Buttons_ApplySettings();
   }
 }
@@ -273,31 +272,14 @@ static void Ui_HandleButtonSetup(UiEvent event)
 
 static void Ui_HandleRapidTrigger(UiEvent event)
 {
-  const ButtonSettings *button_settings = Settings_GetButtonSettings(ui.selected_button);
-  int8_t direction = (event == UI_EVT_ROTATE_CW) ? 1 : -1;
-
-  if (event == UI_EVT_CLICK)
+  if (event == UI_EVT_CLICK || event == UI_EVT_ROTATE_CW || event == UI_EVT_ROTATE_CCW)
   {
-    ui.edit_field = (uint8_t)((ui.edit_field + 1U) % UI_RAPID_TRIGGER_FIELD_COUNT);
+    Settings_ToggleRapidTrigger();
+    Hall_Buttons_ApplySettings();
   }
   else if (event == UI_EVT_LONG_PRESS || event == UI_EVT_BACK)
   {
     Ui_SetScreen(UI_SCREEN_DASHBOARD);
-  }
-  else if ((event == UI_EVT_ROTATE_CW || event == UI_EVT_ROTATE_CCW) && button_settings != NULL)
-  {
-    if (ui.edit_field == 0U)
-    {
-      Settings_SetButtonRapidTriggerEnabled(ui.selected_button, button_settings->rapid_trigger_enabled == 0U);
-    }
-    else if (ui.edit_field == 1U)
-    {
-      Ui_AdjustU16(button_settings->rapid_trigger_press_delta, (int16_t)(direction * UI_VALUE_STEP_ADC), SETTINGS_ADC_MIN, SETTINGS_ADC_MAX, Settings_SetButtonRapidTriggerPressDelta);
-    }
-    else
-    {
-      Ui_AdjustU16(button_settings->rapid_trigger_release_delta, (int16_t)(direction * UI_VALUE_STEP_ADC), SETTINGS_ADC_MIN, SETTINGS_ADC_MAX, Settings_SetButtonRapidTriggerReleaseDelta);
-    }
   }
 }
 
@@ -403,7 +385,7 @@ static void Ui_RenderDashboard(void)
   Ui_AppendString(line, sizeof(line), &offset, "% ");
   Ui_AppendString(line, sizeof(line), &offset, Hall_Buttons_GetPressedState(ui.selected_button) ? "ON" : "OFF");
   Ui_AppendString(line, sizeof(line), &offset, " RT");
-  Ui_AppendU32(line, sizeof(line), &offset, Settings_IsButtonRapidTriggerEnabled(ui.selected_button));
+  Ui_AppendU32(line, sizeof(line), &offset, Settings_IsRapidTriggerEnabled());
   UiRender_Text(0U, 8U, line);
 
   for (index = 0U; index < HALL_BUTTON_COUNT; index++)
@@ -424,6 +406,12 @@ static void Ui_RenderSimpleScreen(const char *title)
   Ui_AppendString(line, sizeof(line), &offset, " F");
   Ui_AppendU32(line, sizeof(line), &offset, ui.edit_field);
   UiRender_Text(0U, 8U, line);
+}
+
+static void Ui_RenderRapidTrigger(void)
+{
+  UiRender_Text(0U, 0U, "Rapid Trigger");
+  UiRender_Text(0U, 8U, Settings_IsRapidTriggerEnabled() ? "Global ON" : "Global OFF");
 }
 
 void Ui_Init(void)
@@ -544,7 +532,7 @@ void Ui_Render(void)
       break;
 
     case UI_SCREEN_RAPID_TRIGGER:
-      Ui_RenderSimpleScreen("Rapid Trigger");
+      Ui_RenderRapidTrigger();
       break;
 
     case UI_SCREEN_PROFILES:
