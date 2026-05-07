@@ -30,6 +30,8 @@ void Hall_Buttons_Init(const volatile uint16_t *adc1_samples, const volatile uin
 void Hall_Buttons_UpdateAll(void);
 void Hall_Buttons_ApplySettings(void);
 uint32_t Hall_Buttons_GetAdcValue(HallButtonId button);
+uint16_t Hall_Buttons_GetNormalizedTravel(HallButtonId button);
+uint8_t Hall_Buttons_GetPressedState(HallButtonId button);
 GPIO_PinState Hall_Buttons_GetGateState(HallButtonId button);
 
 #ifdef __cplusplus

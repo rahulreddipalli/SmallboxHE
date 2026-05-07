@@ -22,8 +22,16 @@ typedef struct
   uint32_t press_threshold;
   uint32_t release_threshold;
   uint32_t hall_adc_value;
+  uint16_t normalized_travel;
   GPIO_PinState gate_state;
 } HallButtonMap;
+
+typedef struct
+{
+  uint32_t last_adc_value;
+  uint32_t press_anchor_adc;
+  uint32_t release_anchor_adc;
+} HallRapidTriggerState;
 
 /* Pointers to the DMA-backed ADC sample buffers owned by board.c. */
 static const volatile uint16_t *hall_adc1_samples = NULL;
@@ -32,10 +40,9 @@ static const volatile uint16_t *hall_adc2_samples = NULL;
 /* Default global threshold values used before settings are applied. */
 static const uint32_t HALL_PRESS_THRESHOLD = 2200U;
 static const uint32_t HALL_RELEASE_THRESHOLD = 1800U;
-static const uint32_t HALL_THRESHOLD_CENTER = (HALL_PRESS_THRESHOLD + HALL_RELEASE_THRESHOLD) / 2U;
 
 #define HALL_BUTTON_MAP(adc_source, sample_index, output_port, output_pin) \
-  { adc_source, sample_index, output_port, output_pin, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, GPIO_PIN_RESET }
+  { adc_source, sample_index, output_port, output_pin, HALL_PRESS_THRESHOLD, HALL_RELEASE_THRESHOLD, 0, 0, GPIO_PIN_RESET }
 
 /*
  * Static mapping of physical Hall inputs to gate outputs.
@@ -59,6 +66,9 @@ static HallButtonMap hall_button_map[HALL_BUTTON_COUNT] =
   [HALL_BUTTON_R3]       = HALL_BUTTON_MAP(HALL_ADC_SOURCE_ADC2, 5U, GPIOB, GPIO_PIN_9)   /* RMOD_HE -> R3_GATE */
 };
 
+static HallRapidTriggerState hall_rapid_trigger_state[HALL_BUTTON_COUNT];
+static GPIO_PinState hall_output_gate_state[HALL_BUTTON_COUNT];
+
 /*
  * Clamp a threshold into the valid 12-bit ADC range.
  * This keeps addition/subtraction from overflowing the ADC limits.
@@ -78,23 +88,88 @@ static uint32_t Hall_ClampThreshold(int32_t threshold)
   return (uint32_t)threshold;
 }
 
+static uint16_t Hall_ClampTravel(int32_t travel)
+{
+  if (travel < 0)
+  {
+    return 0U;
+  }
+
+  if (travel > 1000)
+  {
+    return 1000U;
+  }
+
+  return (uint16_t)travel;
+}
+
+static uint16_t Hall_ComputeNormalizedTravel(HallButtonId button_id, uint32_t adc_value)
+{
+  const ButtonSettings *button_settings = Settings_GetButtonSettings(button_id);
+  const ButtonCalibration *calibration = Settings_GetButtonCalibration(button_id);
+  int32_t rest_adc = 0;
+  int32_t pressed_adc = 4095;
+  int32_t span;
+  int32_t travel;
+
+  if (calibration != NULL && calibration->calibrated != 0U && calibration->rest_adc != calibration->pressed_adc)
+  {
+    rest_adc = (int32_t)calibration->rest_adc;
+    pressed_adc = (int32_t)calibration->pressed_adc;
+  }
+
+  span = pressed_adc - rest_adc;
+  if (span == 0)
+  {
+    return 0U;
+  }
+
+  travel = (((int32_t)adc_value - rest_adc) * 1000) / span;
+
+  if (button_settings != NULL && button_settings->invert_axis != 0U)
+  {
+    travel = 1000 - travel;
+  }
+
+  travel = Hall_ClampTravel(travel);
+
+  if (button_settings != NULL && button_settings->deadzone_high > button_settings->deadzone_low)
+  {
+    if (travel <= (int32_t)button_settings->deadzone_low)
+    {
+      return 0U;
+    }
+
+    if (travel >= (int32_t)button_settings->deadzone_high)
+    {
+      return 1000U;
+    }
+
+    travel = ((travel - (int32_t)button_settings->deadzone_low) * 1000) /
+             ((int32_t)button_settings->deadzone_high - (int32_t)button_settings->deadzone_low);
+  }
+
+  return Hall_ClampTravel(travel);
+}
+
 /*
- * Apply runtime settings to every button mapping.
- * Current implementation uses a single global actuation distance,
- * producing symmetric press/release thresholds around the midpoint.
+ * Apply active profile button settings to every button mapping.
+ * Defaults remain equivalent to the original 2200/1800 hysteresis.
  */
 void Hall_Buttons_ApplySettings(void)
 {
   uint32_t index;
-  uint16_t actuation_distance = Settings_GetActuationDistance();
-  uint32_t half_distance = (uint32_t)actuation_distance / 2U;
-  uint32_t press_threshold = Hall_ClampThreshold((int32_t)HALL_THRESHOLD_CENTER + (int32_t)half_distance);
-  uint32_t release_threshold = Hall_ClampThreshold((int32_t)HALL_THRESHOLD_CENTER - (int32_t)half_distance);
+  const ButtonSettings *button_settings;
 
   for (index = 0; index < HALL_BUTTON_COUNT; index++)
   {
-    hall_button_map[index].press_threshold = press_threshold;
-    hall_button_map[index].release_threshold = release_threshold;
+    button_settings = Settings_GetButtonSettings((HallButtonId)index);
+
+    if (button_settings != NULL)
+    {
+      hall_button_map[index].press_threshold = Hall_ClampThreshold((int32_t)button_settings->press_threshold);
+      hall_button_map[index].release_threshold = Hall_ClampThreshold((int32_t)button_settings->release_threshold);
+    }
   }
 }
 
@@ -128,16 +203,28 @@ static uint32_t Hall_ReadSample(const HallButtonMap *button)
  */
 static void Hall_Button_UpdateState(HallButtonMap *button)
 {
+  HallButtonId button_id = (HallButtonId)(button - hall_button_map);
+
   button->hall_adc_value = Hall_ReadSample(button);
+  button->normalized_travel = Hall_ComputeNormalizedTravel(button_id, button->hall_adc_value);
 
   if (button->gate_state == GPIO_PIN_RESET && button->hall_adc_value >= button->press_threshold)
   {
     button->gate_state = GPIO_PIN_SET;
+    hall_rapid_trigger_state[button_id].press_anchor_adc = button->hall_adc_value;
   }
   else if (button->gate_state == GPIO_PIN_SET && button->hall_adc_value <= button->release_threshold)
   {
     button->gate_state = GPIO_PIN_RESET;
+    hall_rapid_trigger_state[button_id].release_anchor_adc = button->hall_adc_value;
   }
+
+  hall_rapid_trigger_state[button_id].last_adc_value = button->hall_adc_value;
+
+  /*
+   * TODO: Replace fixed-threshold hysteresis with rapid-trigger movement
+   * deltas when the exact RT semantics are finalized.
+   */
 }
 
 /*
@@ -179,6 +266,7 @@ static void Hall_WriteOutputs(void)
   for (source_index = 0U; source_index < HALL_BUTTON_COUNT; source_index++)
   {
     Hall_WriteGate((HallButtonId)source_index, output_states[source_index]);
+    hall_output_gate_state[source_index] = output_states[source_index];
   }
 }
 
@@ -188,8 +276,19 @@ static void Hall_WriteOutputs(void)
  */
 void Hall_Buttons_Init(const volatile uint16_t *adc1_samples, const volatile uint16_t *adc2_samples)
 {
+  uint32_t index;
+
   hall_adc1_samples = adc1_samples;
   hall_adc2_samples = adc2_samples;
+
+  for (index = 0U; index < HALL_BUTTON_COUNT; index++)
+  {
+    hall_rapid_trigger_state[index].last_adc_value = 0U;
+    hall_rapid_trigger_state[index].press_anchor_adc = 0U;
+    hall_rapid_trigger_state[index].release_anchor_adc = 0U;
+    hall_output_gate_state[index] = GPIO_PIN_RESET;
+  }
+
   Hall_Buttons_ApplySettings();
 }
 
@@ -220,6 +319,28 @@ uint32_t Hall_Buttons_GetAdcValue(HallButtonId button)
   return hall_button_map[button].hall_adc_value;
 }
 
+/* Return the most recent normalized travel value for a button, scaled 0..1000. */
+uint16_t Hall_Buttons_GetNormalizedTravel(HallButtonId button)
+{
+  if (button >= HALL_BUTTON_COUNT)
+  {
+    return 0U;
+  }
+
+  return hall_button_map[button].normalized_travel;
+}
+
+/* Return the current logical pressed state for a physical Hall source. */
+uint8_t Hall_Buttons_GetPressedState(HallButtonId button)
+{
+  if (button >= HALL_BUTTON_COUNT)
+  {
+    return 0U;
+  }
+
+  return (hall_button_map[button].gate_state == GPIO_PIN_SET) ? 1U : 0U;
+}
+
 /* Return the current projected gate output state for a button. */
 GPIO_PinState Hall_Buttons_GetGateState(HallButtonId button)
 {
@@ -228,5 +349,5 @@ GPIO_PinState Hall_Buttons_GetGateState(HallButtonId button)
     return GPIO_PIN_RESET;
   }
 
-  return hall_button_map[button].gate_state;
+  return hall_output_gate_state[button];
 }

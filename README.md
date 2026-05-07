@@ -32,27 +32,29 @@ Implemented:
 - Simple global press/release thresholds with hysteresis
 - Runtime settings backend for profiles, routing, rapid trigger enable, actuation/release distance, and calibration mode
 - 4 programmable controller profiles, with Profile 0 defaulting to one-to-one Hall-to-gate routing
+- Per-button settings fields for press/release thresholds, rapid-trigger deltas, deadzones, invert-axis, and calibration ranges
 - Flash-backed settings/profile storage in the last reserved 2 KB flash page
+- Headless rotary UI architecture with event queue, menu state machine, no-op renderer abstraction, and non-blocking calibration workflow
 - A clean `main.c` loop that delegates Hall processing to a separate module
 
 Not implemented yet:
 
 - Rapid trigger algorithm
-- Per-button thresholds
-- Calibration workflow
-- OLED/display/menu logic
+- Physical rotary input polling
+- SH1122 OLED/display hardware driver
 - SOCD cleaning
 - Timer-triggered ADC scanning
 
 ## Current Button Logic
 
-Thresholds are derived from the actuation distance in `Core/Src/settings.c`:
+Default per-button thresholds are initialized from the original global feel:
 
 ```c
-#define SETTINGS_ACTUATION_DISTANCE_DEFAULT 400U
+press = 2200
+release = 1800
 ```
 
-The current default keeps the midpoint near the original `2200` press / `1800` release behavior, but the menu backend can now adjust that distance. The same setting controls the press and release gap symmetrically for now.
+The legacy actuation-distance API is still present for compatibility, but the active profile now stores editable per-button threshold settings. Normalized travel is exposed as `0..1000` using per-button calibration data when available.
 
 ADC1 and ADC2 run continuous scan conversions with circular DMA. `hall_buttons.c` reads the latest samples from the DMA buffers and updates the gate outputs without blocking on `HAL_ADC_PollForConversion(...)`.
 
@@ -65,10 +67,13 @@ Settings currently include:
 - calibration mode enabled/disabled
 - active profile index
 - 4 profile routing tables
+- per-button thresholds, deadzones, invert-axis, rapid-trigger deltas, and calibration records
 
 Each physical Hall source can route to any physical gate output or be disabled. Profile 0 defaults to one-to-one routing, so `LMOD_HE` drives `L3_GATE` and `RMOD_HE` drives `R3_GATE`. A later OLED/rotary menu can reprogram that profile so, for example, `LMOD_HE` contributes to `LEFT_GATE` and `RMOD_HE` contributes to `RIGHT_GATE`. Shared outputs are OR-combined, so multiple Hall sources can target one gate without overwriting each other.
 
 Settings load from flash during `Settings_Init()` if the saved record has the expected magic, version, length, and CRC. `Settings_Save()` writes the current settings/profile store. The IAR flash linker file reserves the last flash page by ending application ROM at `0x0807F7FF`; settings storage starts at `0x0807F800`.
+
+UI/menu logic is intentionally headless for now. `ui.c` owns the screen state machine, `input_events.c` owns the generic queued `UiEvent` interface, `calibration.c` owns the non-blocking calibration flow, and `ui_render.c` is a no-op renderer backend ready to be replaced by a future SH1122 renderer without moving UI logic into display-driver code.
 
 ## Pin Map
 

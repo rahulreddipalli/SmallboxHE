@@ -80,9 +80,16 @@ main.c
   -> App_Init()
        Settings_Init()
        Hall_Buttons_Init(Board_GetHallAdc1Samples(), Board_GetHallAdc2Samples())
+       Ui_Init()
+       InputEvents_Init()
+       UiRender_Init()
   -> while forever
        App_RunOnce()
          Hall_Buttons_UpdateAll()
+         InputEvents_Update()
+         queued UiEvent processing
+         Ui_Tick()
+         Ui_Render()
 ```
 
 Current `main.c` should stay essentially this simple:
@@ -122,12 +129,21 @@ Application files:
 - `Core/Src/settings.c`
   - Runtime settings/profile backend.
   - Rapid-trigger enable flag exists, but rapid trigger algorithm does not.
-  - Calibration-mode flag exists, but calibration workflow does not.
+  - Stores per-button settings and calibration records inside each profile.
 - `Core/Src/hall_buttons.c`
   - Physical Hall ADC to gate output map.
   - Maps buttons to ADC DMA sample buffer indices.
   - Current hysteresis button state logic.
   - Raw ADC and gate state getters.
+- `Core/Src/input_events.c`
+  - Hardware-independent queued UI event interface.
+  - Rotary hardware polling is not implemented yet.
+- `Core/Src/ui.c`
+  - Headless menu/UI state machine for dashboard, profile, setup, calibration, raw ADC, display, system, and confirmation screens.
+- `Core/Src/ui_render.c`
+  - No-op renderer abstraction for future OLED backends.
+- `Core/Src/calibration.c`
+  - Non-blocking calibration workflow that captures rest values and per-button pressed values in any order.
 
 Headers:
 
@@ -166,6 +182,7 @@ Settings:
 - `Settings_Save()` writes the current settings/profile store to flash.
 - The IAR flash linker reserves the final 2 KB page by ending ROM at `0x0807F7FF`.
 - Settings storage begins at `0x0807F800`, which is the final 2 KB flash page on the 512 KB STM32G474RET6 layout.
+- Storage version is `2` after adding per-button settings/calibration. Older records fail validation and defaults remain active until saved again.
 - Defaults in `Core/Inc/settings.h`:
 
 ```c
@@ -182,6 +199,8 @@ Settings:
   - `profiles[SETTINGS_PROFILE_COUNT]`
 - `ControllerProfile` currently has:
   - `output_for_button[HALL_BUTTON_COUNT]`
+  - `button_settings[HALL_BUTTON_COUNT]`
+  - `button_calibration[HALL_BUTTON_COUNT]`
   - `rapid_trigger_enabled`
   - `actuation_distance`
 - Profile 0 defaults to one-to-one routing.
@@ -201,12 +220,15 @@ static const uint32_t HALL_THRESHOLD_CENTER = 2000U;
 - With default distance `400`, thresholds remain equivalent to press `2200`, release `1800`.
 - The same actuation distance is applied to every button.
 - Thresholds are symmetrical around center `2000`.
+- Active profiles now also store per-button thresholds. Defaults preserve the original `2200` press / `1800` release behavior; the legacy actuation-distance API updates all per-button thresholds symmetrically for compatibility.
 - This is still fixed-threshold hysteresis, not rapid trigger.
 - `Settings_IsRapidTriggerEnabled()` exists but is not used by `hall_buttons.c`.
-- `Settings_IsCalibrationModeEnabled()` exists but is not used by a calibration workflow.
+- Per-button rapid-trigger fields and Hall runtime state hooks exist, but the rapid-trigger algorithm is still a TODO.
+- `calibration.c` uses `Settings_IsCalibrationModeEnabled()` state and stores per-button calibration records without blocking the main loop.
 - `hall_buttons.c` asks `Settings_GetRouteOutput(...)` where each physical Hall source should route.
 - Output states are OR-combined so multiple Hall sources can map to the same gate safely.
 - This replaces the old special-case mod-as-directions setting.
+- `Hall_Buttons_GetNormalizedTravel()` returns `0..1000` using per-button calibration data when available, plus invert-axis and deadzone settings.
 
 ADC behavior:
 
@@ -287,17 +309,13 @@ Do not claim these exist until implemented:
 - OLED/display driver
 - SPI display peripheral initialization beyond pin assignment
 - OLED drawing primitives
-- Settings page/menu logic
-- Physical menu input handling
-- Calibration workflow
+- Physical rotary/menu input polling
 - Rapid-trigger algorithm
 - SOCD cleaning
 - USB HID controller stack
 - Timer-triggered ADC acquisition
-- Per-button thresholds
-- Per-button calibration data
 
-There is no OLED/menu workflow yet, but the settings/profile model is ready for it to edit.
+There is no OLED hardware renderer yet, but the headless UI/menu workflow and no-op renderer abstraction are present.
 
 ## Hardware Assumptions And Unknowns
 
@@ -404,6 +422,10 @@ Core/Src/app_error.c     fail-stop error/assert handling
 Core/Src/settings.c      settings/profile model
 Core/Src/settings_storage.c flash persistence
 Core/Src/hall_buttons.c  Hall ADC DMA sample mapping and gate state
+Core/Src/input_events.c  queued hardware-independent UI events
+Core/Src/ui.c            headless UI/menu state machine
+Core/Src/ui_render.c     no-op renderer abstraction
+Core/Src/calibration.c   non-blocking calibration workflow
 ```
 
 Likely next modules:
@@ -499,9 +521,8 @@ Relevant context already established:
 - The user wants `AGENT.md` to be the entry point and planning source for agentic development.
 - Earlier the project was a simple `main.c` prototype; it has since been split into modules.
 - Earlier OLED/drawing code was checked and found not implemented.
-- Settings page/menu logic was checked and found not implemented.
-- A RAM settings backend now exists, but no menu/page/storage workflow exists.
-- A flash-backed profile store now exists; menu/page editing workflow still does not.
+- Headless settings page/menu logic now exists, but physical rotary input polling and OLED hardware rendering do not.
+- A flash-backed profile store exists with per-button settings and calibration records.
 - ADC reads were converted from blocking per-channel polling to continuous scan with circular DMA.
 - The old deliberate `HAL_Delay(1)` in `App_RunOnce()` was removed after DMA conversion.
 - Hall inputs should be single-ended for normal analog Hall sensors.

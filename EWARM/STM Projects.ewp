@@ -1101,6 +1101,18 @@
           <name>$PROJ_DIR$/../Core/Src/hall_buttons.c</name>
         </file>
         <file>
+          <name>$PROJ_DIR$/../Core/Src/input_events.c</name>
+        </file>
+        <file>
+          <name>$PROJ_DIR$/../Core/Src/calibration.c</name>
+        </file>
+        <file>
+          <name>$PROJ_DIR$/../Core/Src/ui_render.c</name>
+        </file>
+        <file>
+          <name>$PROJ_DIR$/../Core/Src/ui.c</name>
+        </file>
+        <file>
           <name>$PROJ_DIR$/../Core/Src/stm32g4xx_it.c</name>
         </file>
         <file>
